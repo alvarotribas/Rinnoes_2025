@@ -139,24 +139,23 @@ function [f_half, Y_mag] = FFT(Tp, M, N, fc, fs, Vg, sig, alpha, c, R, fp, SNR_d
     f_half = f(1:M_fft/2); % Corresponding frequency axis
 end
 
-
 % Variables ===============================================================
 % Values should be later adjusted to make sense in the physical world
 
-[N, M] = deal(623, 600); % Number of pulses, Total number of samples in each pulse interval
-fs = 10000; % Sampling frequency (in Hz)
-fc = 100; % Carrier frequency (in Hz)
-Tp = 0.1; % Pulse repetition interval (PRI, in sec)
+[N, M] = deal(1000, 300); % Number of pulses, Total number of samples in each pulse interval
+fs = 8e9; % Sampling frequency (in Hz)
+fc = 4e9; % Carrier frequency (in Hz)
+Tp = 4e-3; % Pulse repetition interval (PRI, in sec)
 t = 1:1/fs:M*Tp; % Time span, arbitrary
 fast_time = (0:N-1)/fs * 1e6; % (in msec)
 slow_time = (0:M-1) * Tp; % (in sec)
 Vg = 1; % Amplitude
-sig = 0.01; % Standard deviation
+sig = 9e-9; % Standard deviation
 c = physconst('LightSpeed'); % Speed of ligth (in m/s)
 R = 1.2; % Distance to the target
-alpha = 0.65; % Channel gain
+alpha = 0.95; % Channel gain
 fp = fs/100; % Passband frequency, arbitrary == only produces relevant results for some specific values
-SNR_dB = 25; % Signal-to-noise ratio (in dB)
+SNR_dB = 50; % Signal-to-noise ratio (in dB)
 range_bins = [10, 50, 100, 150, 200, 250]; % Arbitrary
 
 % Main ====================================================================
@@ -170,71 +169,82 @@ g = Baseband(t, Tp, M, fc, Vg, sig);
 g_prime = awgn(Received(t, Tp, M, fc, Vg, sig, alpha, c, R), SNR_dB, 'measured');
 
 % Signal after ADC
-[n, m, gs_prime] = ADC(Tp, M, fc, Vg, sig, alpha, c, R, fs, N, SNR_dB);
+%[n, m, gs_prime] = ADC(Tp, M, fc, Vg, sig, alpha, c, R, fs, N, SNR_dB);
 
 % Complex carrier
-[nc, s] = ComplexCarrier(Vg, N, fc, fs);
+%[nc, s] = ComplexCarrier(Vg, N, fc, fs);
 
 % Complex complete baseband from definition
-[n_def, m_def, y_mn] = LPF(Tp, M, N, fc, fs, Vg, sig, alpha, c, R, fp, SNR_dB);
+%[n_def, m_def, y_mn] = LPF(Tp, M, N, fc, fs, Vg, sig, alpha, c, R, fp, SNR_dB);
 
 % Complex complete baseband from equation
-[n_cbb, m_cbb, y_eq] = LPFEquation(Tp, M, N, fc, fs, Vg, sig, alpha, c, R);
+%[n_cbb, m_cbb, y_eq] = LPFEquation(Tp, M, N, fc, fs, Vg, sig, alpha, c, R);
 
 % FFT of arbitrary range bin
-% [f_half, Y_mn] = FFT(Tp, M, N, fc, fs, Vg, sig, alpha, c, R, fp, SNR_dB, range_bin);
+%[f_half, Y_mn] = FFT(Tp, M, N, fc, fs, Vg, sig, alpha, c, R, fp, SNR_dB, range_bin);
 
-% Plots ===================================================================
-figure;
-plot(t, g_prime);
-xlabel('t [s]');
-ylabel('Amplitude');
-legend('Real');
-grid on;
+% Saving the most important functions
+save("g_prime_4GHz.mat", "g_prime", "t");
+%save("adc_4GHz.mat", "gs_prime"); % Remember to plot the absolute value later
+%save("lpf_4GHz.mat", "y_mn"); % Remeber to plot the absolute value later
 
-% Plot of the received pulse (fast vs slow time)
-figure;
-imagesc(1:length(n), 1:length(m), abs(gs_prime));
-xlabel('Fast time index (n)');
-ylabel('Slow time index (m)');
-title('ADC |g_{s}^{p}(m,n)|');
-colormap hot;
-colorbar;
-
-% Plot of the complex baseband signal, filtered (fast vs slow time)
-figure;
-imagesc(n_def, m_def, abs(y_mn));
-xlabel('Fast time index (n)');
-ylabel('Slow time index (m)');
-title('LPF |y_{mn}(m,n)|');
-colormap hot;
-colorbar;
-
-% Plot of examples of range bins in the filtered baseband signal
-figure; hold on;
-colors = lines(length(range_bins));
-for i = 1:length(range_bins)
-    n_idx = range_bins(i);
-    y_m = y_mn(:, n_idx);
-    plot(slow_time, y_m, 'Color', colors(i,:), 'DisplayName', ['n = ' num2str(n_idx)]);
-end
-xlabel('t [s]');
-ylabel('y_{mn}(m, n)');
-title('Examples of filtered range bins');
-legend show;
-grid on;
-
-% Plot of FFT for a specific range bin
-figure; hold on;
-bins = 100;  
-colors2 = lines(length(bins));
-for i = 1:length(bins)
-    elem = bins(i);
-    [f_half, Y_mn] = FFT(Tp, M, N, fc, fs, Vg, sig, alpha, c, R, fp, SNR_dB, elem, 30);
-    plot(f_half, Y_mn);
-end
-xlabel('Frequency [Hz]');
-% xlim([0 2]);
-ylabel('|FFT(y_{eq})|');
-legend ('Absolute');
-grid on;
+% % Plots ===================================================================
+% % Original train of pulses
+% figure;
+% plot(t, p);
+% xlabel('Time [s]');
+% ylabel('p(t)');
+% grid on;
+% 
+% % Received signal
+% figure;
+% plot(t, g_prime);
+% xlabel('t [s]');
+% ylabel('Amplitude');
+% legend('Real');
+% grid on;
+% 
+% % Plot of the received pulse (fast vs slow time)
+% figure;
+% imagesc(1:length(n), 1:length(m), abs(gs_prime));
+% xlabel('Fast time index (n)');
+% ylabel('Slow time index (m)');
+% title('ADC |g_{s}^{p}(m,n)|');
+% colorbar;
+% 
+% % Plot of the complex baseband signal, filtered (fast vs slow time)
+% figure;
+% imagesc(n_def, m_def, abs(y_mn));
+% xlabel('Fast time index (n)');
+% ylabel('Slow time index (m)');
+% title('LPF |y_{mn}(m,n)|');
+% colorbar;
+% 
+% % Plot of examples of range bins in the filtered baseband signal
+% figure; hold on;
+% colors = lines(length(range_bins));
+% for i = 1:length(range_bins)
+%     n_idx = range_bins(i);
+%     y_m = y_mn(:, n_idx);
+%     plot(slow_time, y_m, 'Color', colors(i,:), 'DisplayName', ['n = ' num2str(n_idx)]);
+% end
+% xlabel('t [s]');
+% ylabel('y_{mn}(m, n)');
+% title('Examples of filtered range bins');
+% legend show;
+% grid on;
+% 
+% % Plot of FFT for a specific range bin
+% figure; hold on;
+% bins = 100;  
+% colors2 = lines(length(bins));
+% for i = 1:length(bins)
+%     elem = bins(i);
+%     [f_half, Y_mn] = FFT(Tp, M, N, fc, fs, Vg, sig, alpha, c, R, fp, SNR_dB, elem, 30);
+%     plot(f_half, Y_mn);
+% end
+% xlabel('Frequency [Hz]');
+% % xlim([0 2]);
+% ylabel('|FFT(y_{eq})|');
+% legend ('Absolute');
+% grid on;
