@@ -23,7 +23,7 @@ function [m, n, q, gq_prime, yH_mn, yH_mn_unf] = ADC_MultiTarget(M, N, Tp, fc, f
     gq_prime = zeros(M, N);
 
     % Multi-target config
-    Q = 150; % Number of targets
+    Q = 50; % Number of targets
     chest = 5; % Position of the chest wrt the radar
     R_all = linspace(0.6, 4, Q); % Ranges of the human body, linear from closest to furthest
     alpha_all = normpdf(linspace(0.3, 0.9, Q), chest/10, 0.5); % Channel gains, linear within arbitrary range
@@ -109,7 +109,7 @@ end
 % Notice the result is out of scale since the FFT's ampltidue is not in mV
 function [range, pmr] = PMR(Tp, M, N, fc, fs, Vg, sig, c, fp, SNR_dB, Tw)
     % FFT
-    Q = 150;
+    Q = 50;
     range = linspace(0.6, 4, Q);
     pmr = zeros(1, Q);
     for i = 1:Q
@@ -199,7 +199,7 @@ sig = 0.01; % Standard deviation
 c = physconst('LightSpeed'); % Speed of ligth (in m/s)
 R = 1.2; % Distance to the target (in meters)
 fp = fs/100; % Passband frequency, arbitrary == only produces relevant results for some specific values
-SNR_dB = 20; % Signal-to-noise ratio (in dB)
+SNR_dB = 25; % Signal-to-noise ratio (in dB)
 range_bins = [10, 50, 100, 150, 200, 250]; % Arbitrary
 r = 100; % Specific range bin to perform FFT
 Tw = 30; % Time window to perform FFT (in sec)
@@ -217,16 +217,16 @@ p = GaussianPulse(t, Vg, sig);
 [m, n, q, gq_prime, yH_mn, yH_mn_unf] = ADC_MultiTarget(M, N, Tp, fc, fp, fs, Vg, sig, c, SNR_dB);
 
 % FFT of multi-point model
-%[f_half, Y_mag_unf, Y_mag] = FFT(Tp, M, N, fc, fs, Vg, sig, c, fp, SNR_dB, r, Tw);
+[f_half, Y_mag_unf, Y_mag] = FFT(Tp, M, N, fc, fs, Vg, sig, c, fp, SNR_dB, r, Tw);
 
 % PMR values for the plot
-%[range, pmr] = PMR(Tp, M, N, fc, fs, Vg, sig, c, fp, SNR_dB, Tw);
+[range, pmr] = PMR(Tp, M, N, fc, fs, Vg, sig, c, fp, SNR_dB, Tw);
 
 % CWT Scalogram of waveform sequence, regardless of PMR value (for now)
-%[wt, mag_wt, f] = CWT(Tp, M, N, fc, fp, fs, Vg, sig, c, SNR_dB, r, Tw);
+[wt, mag_wt, f] = CWT(Tp, M, N, fc, fp, fs, Vg, sig, c, SNR_dB, r, Tw);
 
 % MAD Score
-%[mad_score, t_window] = MAD(Tp, M, N, fc, fp, fs, Vg, sig, c, SNR_dB, r, Tw);
+[mad_score, t_window] = MAD(Tp, M, N, fc, fp, fs, Vg, sig, c, SNR_dB, r, Tw);
 
 % Plots ===================================================================
 
@@ -277,45 +277,45 @@ legend show;
 grid on;
 
 % FFT of both filtered and unfiltered slow time signals (for selected bin)
-% figure; hold on;
-% plot(f_half, Y_mag_unf, f_half, Y_mag);
-% xlabel('Frequency [Hz]');
-% ylabel('|FFT(y_{eq})|');
-% [Y_max, idx_max] = max(Y_mag);
-% maxstr = sprintf('Frequency of maximum for filtered signal = %.2f Hz', idx_max);
-% legend ('Unfiltered', 'Filtered', maxstr);
-% grid on;
+figure; hold on;
+plot(f_half, Y_mag_unf, f_half, Y_mag);
+xlabel('Frequency [Hz]');
+ylabel('|FFT(y_{eq})|');
+[Y_max, idx_max] = max(Y_mag);
+maxstr = sprintf('Frequency of maximum for filtered signal = %.2f Hz', idx_max);
+legend ('Unfiltered', 'Filtered', maxstr);
+grid on;
 
 % PMR for different ranges of the filtered frequencies
-% figure;
-% plot(range, pmr, '-o');
-% yline(thold);
-% xlabel('Range [m]');
-% ylabel('PMR');
-% title('PMR value to identify motion range bins');
-% legend('Values', 'Threshold');
-% grid on;
+figure;
+plot(range, pmr, '-o');
+yline(thold);
+xlabel('Range [m]');
+ylabel('PMR');
+title('PMR value to identify motion range bins');
+legend('Values', 'Threshold');
+grid on;
  
 % CWT of signal above threshold (for selected bin, r)
-% figure;
-% imagesc(slow_time, f, abs(mag_wt));
-% xlabel('Time [s]');
-% ylabel('Frequency [Hz]');
-% title('CWT Scalogram for r = 100');
-% % colormap hot;
-% colorbar;
+figure;
+imagesc(slow_time, f, abs(mag_wt));
+xlabel('Time [s]');
+ylabel('Frequency [Hz]');
+title('CWT Scalogram for r = 100');
+% colormap hot;
+colorbar;
 
 % CWT of signal over time (for selected bin, r)
-% figure; 
-% plot(slow_time, abs(mag_wt(5,:)));
-% xlabel('Time [s]');
-% ylabel('|CWT|');
-% grid on;
+figure; 
+plot(slow_time, abs(mag_wt(5,:)));
+xlabel('Time [s]');
+ylabel('|CWT|');
+grid on;
 
 % MAD score of signal over time (for selected bin, r)
-% figure;
-% plot(t_window, mad_score);
-% xlabel('Time [s]');
-% ylabel('MAD Score');
-% title('MAD Score for r = 100');
-% grid on;
+figure;
+plot(t_window, mad_score);
+xlabel('Time [s]');
+ylabel('MAD Score');
+title('MAD Score for r = 100');
+grid on;
