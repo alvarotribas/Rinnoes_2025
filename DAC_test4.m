@@ -57,7 +57,7 @@ function [gs_prime, r] = ADC(Tp, M, fc, Vg, sig, alpha, c, R, fs, N)
         t_start = (m_idx-1)*Tp;
 
         % Target motion (example sinusoidal)
-        x_center = 20*sin(1*t_start);
+        x_center = 2*sin(1*t_start);
         tau_center = 2*(R + x_center)/c; % round-trip delay
 
         for n_idx = 1:N
@@ -80,30 +80,22 @@ function [gs_prime, r] = ADC(Tp, M, fc, Vg, sig, alpha, c, R, fs, N)
 end
 
 % DAC conversion
-function [t_dac, g_dac, g_dac_matrix] = DAC(gs_prime, fs, up_factor)
-
-    [M, N] = size(gs_prime);
+function [t_dac, g_dac] = DAC(gs_prime, fs, up_factor)
 
     % Flatten pulses to chronological 1-D sequence
     g1d = gs_prime.'; % N x M
     g1d = g1d(:); % (M*N) x 1
 
     % Resample once using sinc-like interpolation
-    g_up = resample(g1d, up_factor,1);  % column vector
+    g_dac = resample(g1d, up_factor,1);  % column vector
 
     % Time vector for reconstructed waveform
     fs_up = fs * up_factor;
-    t_dac = (0:length(g_up)-1).' / fs_up;
+    t_dac = (0:length(g_dac)-1).' / fs_up;
 
-    % Visualization of per-sample pulses
-    N_up = N * up_factor;
-    if mod(length(g_up), N_up) == 0 && M*N_up == length(g_up)
-        g_dac_matrix = reshape(g_up, N_up, M).';
-    else
-        g_dac_matrix = [];
-    end
-
-    g_dac = g_up;
+    % Correction to ADC signal through zero-padding
+    g_dac(end+1) = 0;
+    t_dac(end+1) = 0;
 
 end
 
@@ -111,9 +103,9 @@ end
 % Variables ===============================================================
 
 [N, M] = deal(400, 500); % Number of pulses, Total number of samples in each pulse interval
-fs = 10e9; % Sampling frequency (in Hz)
+fs = 16e9; % Sampling frequency (in Hz)
 Ts = 1/fs; % Sampling period (in sec)
-fc = 5e9; % Carrier frequency (in Hz)
+fc = 4e9; % Carrier frequency (in Hz)
 Tp = N/fs; % Pulse repetition interval (PRI, in sec)
 t = 0:1/fs:M*Tp; % Time span, arbitrary
 fast_time = (0:N-1)/fs * 1e6; % (in msec)
@@ -126,7 +118,7 @@ alpha = 1; % Channel gain
 fp = fs/100; % Passband frequency, arbitrary == only produces relevant results for some specific values
 SNR_dB = 50; % Signal-to-noise ratio (in dB)
 range_bins = [10, 50, 100, 150, 200, 250]; % Arbitrary
-up_factor = 10; % DAC parameter
+up_factor = 1; % DAC parameter
 
 % Main ====================================================================
 
@@ -137,15 +129,31 @@ up_factor = 10; % DAC parameter
 [gs_prime, r] = ADC(Tp, M, fc, Vg, sig, alpha, c, R, fs, N);
 
 % Reconstruct waveform
-[t_dac, g_dac, g_dac_matrix] = DAC(gs_prime, fs, up_factor);
+[t_dac, g_dac] = DAC(gs_prime, fs, up_factor);
+
+    % Flatten ADC output
+    g1d = gs_prime.'; g1d = g1d(:);
+    
+    % Original sample time grid
+    t_orig = (0:numel(g1d)-1).' / fs;
+    
+    % Interpolate ADC signal onto DAC grid
+    g_ref = interp1(t_orig, g1d, t_dac, 'linear', 0);
+    
+    % Align signals automatically (Signal Processing Toolbox)
+    [g_ref_aligned, g_dac_aligned] = alignsignals(g_ref, g_dac);
+
+% Validation function
+valid = g_ref_aligned - g_dac_aligned;
 
 % Plots ===================================================================
 
 % g_prime(t)
 figure;
-plot(t*1e3, g_prime);
-xlabel('Time [ms]'); ylabel('Amplitude');
+plot(t*1e6, g_prime);
+xlabel('Time [\mus]'); ylabel('Amplitude');
 title('Received signal g^p(t)');
+grid on;
 
 %gs_prime(m,n)
 figure;
@@ -161,11 +169,19 @@ figure;
 plot(t_dac*1e6, g_dac);
 xlabel('Time [\mus]'); ylabel('Amplitude');
 title('Samples of pulses reconstructed by the DAC');
+grid on;
+
+% Validation g_dac - g_prime
+figure;
+plot(t*1e6, valid);
+xlabel('Time [\mus]');
+ylabel('|g_{dac}-g^{p}|');
+grid on;
 
 % Testing =================================================================
 
 %Choosing a representative pulse index
-m_idx = 10;
+m_idx = 10; 
 pulse = gs_prime(m_idx,:);
 
 % Raw fast-time samples for the chosen pulse
@@ -178,3 +194,4 @@ env = abs(hilbert(pulse));
 subplot(2,1,2);
 plot((0:length(pulse)-1)/fs*1e6, env);
 xlabel('fast-time (\mus)'); ylabel('envelope'); title('Envelope (abs(hilbert))');
+

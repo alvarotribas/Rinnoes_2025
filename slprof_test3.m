@@ -3,6 +3,10 @@
 % following the results from a paper. No specficic range bin has been
 % selected according to the criteria stablished in slprof_test2.m.
 % - A later code will be written combining the actual results of all parts.
+% - The sleep apnea is imposed as a random occurance in the received
+% signal. This may or may not be how it will be simulated in the future.
+% - The values of X and L still haven't been adjusted to obtain a good
+% result, but the algorithm works.
 
 % Functions ===============================================================
 % Generate a single Gaussian Pulse (p(t))
@@ -11,20 +15,8 @@ function p = GaussianPulse(t, Vg, sig)
     p = Vg*exp(-(t.^2) / (2 * sig^2));
 end
 
-% Generate the baseband signal
-function g = Baseband(t, Tp, M, fc, Vg, sig)
-    % Repeated pulses
-    g = zeros(size(t));
-
-    for m = 1:M
-        tau_m = t - m*Tp;
-        p_bb = GaussianPulse(tau_m, Vg, sig);
-        g = g + p_bb .* cos(2*pi*fc*tau_m);
-    end
-end
-
-% Received RF pulse signal
-function g_prime = Received(t, Tp, M, fc, Vg, sig, alpha, c, R)
+% Received RF pulse signal with added randomness in amplitude and occurance
+function g_prime = Received(t, Tp, M, fc, Vg, sig, alpha, c, R, p_exist, amp_range)
     % Round-trip time
     x = 2*sin(1*t); % Movement of the chest, estimated
     tau = 2*(R + x)/c; % Round-trip time, is very small due to speed of light
@@ -32,9 +24,15 @@ function g_prime = Received(t, Tp, M, fc, Vg, sig, alpha, c, R)
     g_prime = zeros(size(t));
 
     for m = 1:M
-        tau_m = t - m*Tp;
-        p_rf = GaussianPulse(tau_m - tau, Vg, sig);
-        g_prime = g_prime + alpha * p_rf .* cos(2*pi*fc*(tau_m-tau));
+        if rand <= p_exist
+            tau_m = t - m*Tp;
+            p_rf = GaussianPulse(tau_m - tau, Vg, sig);
+
+            % Random amplitude scaling
+            rand_amp = amp_range(1) + (amp_range(2)-amp_range(1)) * rand;
+
+            g_prime = g_prime + rand_amp * alpha * p_rf .* cos(2*pi*fc*(tau_m-tau));
+        end
     end
 end
 
@@ -84,44 +82,60 @@ function [n, m, y_mn] = LPF(Tp, M, N, fc, fs, Vg, sig, alpha, c, R, fp, SNR_dB)
 end
 
 % Correlation function
-function detection = SleepApneaDetection(M, N, y_mn, epsilon)
-    % Definition
-    X = M/50; % Number of consecutive samples, arbitrary
-    L = 10/(X*10^(-6)); % Length of apnea duration interval
+function [detection, chi_q, samples, alarm, apnea_intervals] = SleepApneaDetection(y_i, epsilon)
     
+    % Parameters
+    l = length(y_i); % Length of the received signal
+    X = round(l/100000); % Number of consecutive samples, arbitrary
+    L = 1000; % Length of apnea duration interval, in number of samples. Arbitrary
+    samples = floor(l/X); % Number of X samples in the signal
+    
+
     % Windowing
-    chi_q = zeros(size(N));
-    for k = 1:N
-        yi = y_mn(:,k);
-        chi_M = max(yi(1:X));
-        chi_q = chi_q + chi_M;
+    chi_q = zeros(1, samples);
+    for j = 1:samples
+        a = (j-1)*X + 1; 
+        b = min(j*X, l); 
+        chi_q(j) = max(y_i(a:b));
     end
 
-    rho_bar = zeros(size(N));
-    for k = L+1:N
-        q = k-L;
-        rho_M = max(chi_q(q:k));
-        rho_m = min(chi_q(q:k));
-        rho_bar = rho_bar + (1/2)*(rho_M + rho_m);
+    % Calculating the average correlation
+    rho_bar = zeros(1, samples);
+    for j = L+1:samples
+        k = j-L;
+        rho_M = max(chi_q(k:j));
+        rho_m = min(chi_q(k:j));
+        rho_bar(j) = (1/2)*(rho_M + rho_m);
     end
 
-    % Sleep apnea alarm flags
-    alarm = zeros(size(length(rho_bar)));
-    for i = 1:length(rho_bar)
-        if ((1-epsilon)*rho_bar(i) <= chi_q(i)) && (chi_q(i) <= (1+epsilon)*rho_bar(i))
-            alarm = alarm + 1;
+    % Sleep apnea flag condition
+    alarm = zeros(1, samples);
+    for i = 1:samples
+        if rho_bar(i) > 0
+            if ((1-epsilon)*rho_bar(i) <= chi_q(i)) && (chi_q(i) <= (1+epsilon)*rho_bar(i))
+                alarm(i) = 1;
+            end
         end
     end
 
     % Sleep apnea detection algorithm
-    target_value = 1; mask = ones(1,L); % Flag number and mask to identify it
-    logical_op = alarm == target_value;
+    mask = ones(1,L);
+    streaks = conv(double(alarm), mask, 'valid') >= L;
 
-    detection = conv(double(logical_op), mask, 'valid') == L;
+    detection = zeros(1, samples);
+    detection(L:end) = streaks;
+
+    % Storing the indexes of the apnea intervals
+    delta = diff([0 detection 0]);
+    start_idx = find(delta==1);
+    end_idx = find(delta==-1) -1;
+
+    apnea_intervals = [(start_idx-1)*X + 1, end_idx*X]; 
+    apnea_intervals(apnea_intervals > l) = l; % clip to signal length
 end
 
 % Variables ===============================================================
-[N, M] = deal(623, 10000); % Number of pulses, Total number of samples in each pulse interval
+[N, M] = deal(623, 600); % Number of pulses, Total number of samples in each pulse interval
 fs = 10000;
 fc = 100; % Carrier frequency (in Hz)
 Tp = 0.1; % Pulse repetition interval (PRI, in sec)
@@ -140,26 +154,38 @@ Tw = 30; % Time window to perform FFT (in sec)
 thold = 1000; % Arbitrary threshold for PMR selection
 freqs = linspace(0.07, 10, length(slow_time)); % List of wavelet bases from min to max, same amount of points as time signal
 alpha = 0.9;
-epsilon = 0.1;
+epsilon = 0.7;
 
 % Main ====================================================================
 % Received signals at Rx (g^p)
-g_prime = Received(t, Tp, M, fc, Vg, sig, alpha, c, R);
+g_prime = Received(t, Tp, M, fc, Vg, sig, alpha, c, R, 0.5, [0.9 1.15]);
 
 % Sleep apnea detection algorithm
-detection = SleepApneaDetection(M, N, g_prime, epsilon);
-if any(detection)
-    disp('Interval of the apnea ='); disp(find(detection));
+[detection, chi_q, samples, alarm, apnea_intervals] = SleepApneaDetection(g_prime, epsilon);
+
+if isempty(apnea_intervals)
+    disp('No apnea detected');
 else
-    fprintf('No apnea was detected');
+    disp('Apnea intervals (start sample, end sample):');
+    disp(apnea_intervals);
 end
 
 % Plots ===================================================================
+
 % Plot of examples of range bins in the filtered baseband signal
 figure;
 plot(t, g_prime);
 xlabel('t [s]');
 ylabel('Amplitude');
 legend('Real');
+grid on;
+
+% Alarm plot, to see where apnea was detected
+figure;
+plot(1:samples, chi_q); hold on;
+plot(1:samples, alarm);
+xlabel('Samples');
+ylabel('Amplitude');
+legend('Correlation', 'Alarm');
 grid on;
 
